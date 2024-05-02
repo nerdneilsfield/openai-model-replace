@@ -32,8 +32,8 @@ Before running the server, you need to set up a few environment variables and en
 To run the server, you will need to have Go installed on your machine. Use the following commands to run the server:
 
 ```bash
-go build -o server
-./server
+go build -o main
+./main
 ```
 
 This will start the server on the host and port specified in your flags or environment variables.
@@ -43,8 +43,8 @@ This will start the server on the host and port specified in your flags or envir
 要运行服务器，您需要在机器上安装 Go。使用以下命令运行服务器：
 
 ```bash
-go build -o server
-./server
+go build -o main
+./main
 ```
 
 这将在您的标志或环境变量中指定的主机和端口上启动服务器。

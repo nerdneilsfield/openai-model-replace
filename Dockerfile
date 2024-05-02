@@ -2,7 +2,7 @@ FROM golang:alpine as builder
 
 WORKDIR /build
 
-COPY main.go .
+COPY main.go go.mod go.sum ./
 
 RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -o openapi-model-replace main.go
