@@ -1,4 +1,6 @@
-# OpenAI Model Forwarding Server
+# OpenAI Model Forward
+
+[Github Repo](https://github.com/nerdneilsfield/openai-model-replace)
 
 ## Description
 
@@ -73,7 +75,7 @@ Contributions are welcome. Please fork the repository and submit a pull request 
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=nerdneilsfield/openapi-model-replace&type=Date)](https://star-history.com/#nerdneilsfield/openapi-model-replace&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=nerdneilsfield/openai-model-replace&type=Date)](https://star-history.com/#nerdneilsfield/openai-model-replace&Date)
 
 ## License
 

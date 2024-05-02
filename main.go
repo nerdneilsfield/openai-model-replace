@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"flag"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -21,6 +23,27 @@ var PORT = flag.Int("port", 17888, "run server port")
 var API_BASE = flag.String("api_base", "https://api.openai.com", "openai api base url")
 var MODEL_TABLE_FILE = flag.String("model_table", "model_table.json", "model table file")
 var MODEL_TABLE map[string]string
+
+var DEFAULT_READMD = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>OpenAI Model Forward</title>
+</head>
+<body>
+    <h1>OpenAI Model Forward</h1>
+    <p>see <a href="https://github.com/nerdneilsfield/openapi-model-replace">GitHub Repo</a></p>
+</body>
+</html>
+`
+
+//go:embed github-markdown.css README.md index.html
+var f embed.FS
+
+type PageData struct {
+	MarkdownContent template.HTML
+}
 
 // OpenAIRequest represents a request to the OpenAI API.
 type OpenAIRequest struct {
@@ -59,25 +82,35 @@ func LoadReadMe() []byte {
 	opts := html.RendererOptions{Flags: htmlFlags}
 	renderer := html.NewRenderer(opts)
 
-	// set default help
-	helpMd := []byte(`
-	# openapi-model-replace
-	see [GitHub Repo](https://github.com/nerdneilsfield/openapi-model-replace)
-    `)
-	// check if file exists
-	if _, err := os.Stat("./README.md"); !os.IsNotExist(err) {
-		file, err := os.Open("./README.md")
-		if err == nil {
-			readBytes, err := io.ReadAll(file)
-			if err == nil {
-				helpMd = readBytes
-			}
-		}
+	content, err := f.ReadFile("README.md")
+	if err != nil {
+		return []byte(DEFAULT_READMD)
 	}
 
-	doc := p.Parse(helpMd)
-	html := markdown.Render(doc, renderer)
-	return html
+	doc := p.Parse(content)
+	htmlData := markdown.Render(doc, renderer)
+
+	tempContent, err := f.ReadFile("index.html")
+	if err != nil {
+		return []byte(DEFAULT_READMD)
+	}
+
+	tmpl, err := template.New("webpage").Parse(string(tempContent))
+	if err != nil {
+		return []byte(DEFAULT_READMD)
+	}
+
+	pageData := PageData{
+		MarkdownContent: template.HTML(htmlData),
+	}
+
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, pageData) // Pass a pointer to buf
+	if err != nil {
+		return []byte(DEFAULT_READMD)
+	}
+
+	return buf.Bytes()
 }
 
 func copyHeaders(src http.Header, dest http.Header) {
@@ -101,6 +134,15 @@ func main() {
 	r.GET("/", func(c *gin.Context) {
 		helpHtml := LoadReadMe()
 		c.Data(http.StatusOK, "text/html", helpHtml)
+	})
+
+	r.GET("/css/github-markdown.css", func(c *gin.Context) {
+		content, err := f.ReadFile("github-markdown.css")
+		if err != nil {
+			log.Println("Failed to read github-markdown.css")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read github-markdown.css", "code": http.StatusInternalServerError})
+		}
+		c.Data(http.StatusOK, "text/css", content)
 	})
 
 	r.POST("/v1/chat/completions", func(c *gin.Context) {
