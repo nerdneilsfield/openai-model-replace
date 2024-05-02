@@ -158,6 +158,8 @@ func main() {
 			replacedModel := MODEL_TABLE[originModedl]
 			log.Println("Replace model from ", originModedl, " to ", replacedModel)
 			openAIreq.Model = MODEL_TABLE[openAIreq.Model]
+		} else {
+			log.Println("Keep " + openAIreq.Model + " unchanged!")
 		}
 
 		// 将修改后的数据转换为JSON
