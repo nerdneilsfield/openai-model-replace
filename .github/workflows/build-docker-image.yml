@@ -21,7 +21,7 @@ on:
       - master
 
 env:
-  IMAGE_NAME_DOCKERHUB: openapi-model-replace
+  IMAGE_NAME_DOCKERHUB: openai-model-replace
 
 jobs:
   build-and-push:
