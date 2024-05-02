@@ -4,6 +4,7 @@ WORKDIR /build
 
 COPY main.go .
 
+RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -o openapi-model-replace main.go
 
 FROM gruebel/upx:latest as upx
@@ -18,6 +19,7 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 COPY --from=upx /openapi-model-replace /root/openapi-model-replace
+COPY README.md /root/
 
 EXPOSE 17888
 CMD ["/bin/bash"]
