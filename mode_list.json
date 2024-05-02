@@ -1,0 +1,8 @@
+{
+    "gpt-3.5-turbo": "wangshenzhi/llama3-8b-chinese-chat-ollama-fp16",
+    "gpt-3.5-turbo-instruct": "kimi",
+    "gpt-4-turbo": "kimi",
+    "gpt-4-vision-preview": "glm",
+    "gpt-4-32k": "kimi",
+    "gpt-3.5-turbo-16k": "kimi"
+}
