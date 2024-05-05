@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/andybalholm/brotli"
 	"github.com/gin-gonic/gin"
@@ -131,10 +132,11 @@ func ChatCompletions(c *gin.Context) {
 	}
 
 	originModel := openAIreq.Model
+	replacedModel := openAIreq.Model
 
 	// if model in model_table keys replace it
 	if _, ok := MODEL_TABLE[openAIreq.Model]; ok {
-		replacedModel := MODEL_TABLE[originModel]
+		replacedModel = MODEL_TABLE[originModel]
 		log.Println("Replace model from ", originModel, " to ", replacedModel)
 		openAIreq.Model = replacedModel
 	} else {
@@ -200,26 +202,9 @@ func ChatCompletions(c *gin.Context) {
 	}
 
 	if resp.StatusCode == http.StatusOK {
-		var returnJSON map[string]interface{}
-		err = json.Unmarshal(respBody, &returnJSON)
-		if err != nil {
-			log.Println("Failed to unmarshal response body: ", err.Error())
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to unmarshal response body"})
-			return
-		}
-		for key := range returnJSON {
-			if key == "model" {
-				returnJSON[key] = originModel
-			}
-		}
-
-		returnData, err := json.Marshal(returnJSON)
-		if err != nil {
-			log.Println("Failed to marshal return data: ", err.Error())
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal return data"})
-		}
-
-		c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), returnData)
+		returnString := string(respBody)
+		returnString = strings.ReplaceAll(returnString, replacedModel, originModel)
+		c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), []byte(returnString))
 	} else {
 		c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), respBody)
 	}
