@@ -51,12 +51,29 @@ go build -o main
 
 这将在您的标志或环境变量中指定的主机和端口上启动服务器。
 
+## Using Docker
+
+We provide a Docker to run this program: `nerdneils/openai-model-replace`. Use the following command:
+
+```bash
+docker run -d --name openai-model-replace -v ./model_list.json:/root/model_list.json -p 17888:17888 nerdneils/openai-model-replace:latest  /root/openai-model-replace -api_base https://api.openai.org -model_table /root/model_list.json
+```
+
+## 使用 Docker
+
+我们提供了一个 Docker 来运行这个程序: `nerdneils/openai-model-replace`。使用如下命令使用:
+
+```bash
+docker run -d --name openai-model-replace -v ./model_list.json:/root/model_list.json -p 17888:17888 nerdneils/openai-model-replace:latest  /root/openai-model-replace -api_base https://api.openai.org -model_table /root/model_list.json
+```
+
 ## Endpoints
 
 The server has two main endpoints:
 
 - `GET /`: Returns a simple help message.
 - `POST /v1/chat/completions`: Accepts a JSON payload, modifies it according to the model table, and forwards it to the specified OpenAI API.
+- `ANY /v1/*`: Another OpenAI API endpoints.
 
 ## 端点
 
@@ -64,6 +81,7 @@ The server has two main endpoints:
 
 - `GET /`：返回一个简单的帮助页面。
 - `POST /v1/chat/completions`：接受一个 JSON 有效载荷，根据模型表修改它，并将其转发到指定的 OpenAI API。
+- `ANY /v1/*`: 其它 OpenAI API 端点.
 
 ## Contributing
 

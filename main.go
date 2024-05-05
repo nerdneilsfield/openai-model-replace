@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/andybalholm/brotli"
 	"github.com/gin-gonic/gin"
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"
@@ -53,6 +55,33 @@ type OpenAIRequest struct {
 		Content string `json:"content"`
 	} `json:"messages"`
 	Stream bool `json:"stream"`
+}
+
+type ChatCompletion struct {
+	ID                string   `json:"id"`
+	Object            string   `json:"object"`
+	Created           int64    `json:"created"`
+	Model             string   `json:"model"`
+	SystemFingerprint string   `json:"system_fingerprint"`
+	Choices           []Choice `json:"choices"`
+	Usage             Usage    `json:"usage"`
+}
+
+type Choice struct {
+	Index        int     `json:"index"`
+	Message      Message `json:"message"`
+	FinishReason string  `json:"finish_reason"`
+}
+
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // load file in json and save into table
@@ -113,12 +142,145 @@ func LoadReadMe() []byte {
 	return buf.Bytes()
 }
 
-func copyHeaders(src http.Header, dest http.Header) {
+func CopyHeaders(src http.Header, dest http.Header) {
 	for key, values := range src {
 		for _, value := range values {
 			dest.Add(key, value)
 		}
 	}
+}
+
+func ChatCompletions(c *gin.Context) {
+	var openAIreq OpenAIRequest
+
+	if err := c.ShouldBind(&openAIreq); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "code": http.StatusBadRequest})
+	}
+
+	originModel := openAIreq.Model
+
+	// if model in model_table keys replace it
+	if _, ok := MODEL_TABLE[openAIreq.Model]; ok {
+		replacedModel := MODEL_TABLE[originModel]
+		log.Println("Replace model from ", originModel, " to ", replacedModel)
+		openAIreq.Model = replacedModel
+	} else {
+		log.Println("Keep " + openAIreq.Model + " unchanged!")
+	}
+
+	// 将修改后的数据转换为JSON
+	modifiedData, err := json.Marshal(openAIreq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal modified data"})
+		return
+	}
+
+	// 创建新的HTTP客户端请求
+	req, err := http.NewRequest("POST", *API_BASE+"/v1/chat/completions", bytes.NewBuffer(modifiedData))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+	CopyHeaders(c.Request.Header, req.Header)
+
+	// 发送请求
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forward request"})
+		return
+	}
+	defer resp.Body.Close()
+
+	var respReader io.Reader
+	log.Println(resp.Header.Get("Content-Encoding"))
+	switch resp.Header.Get("Content-Encoding") {
+	case "gzip":
+		gzipReader, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			log.Println("Failed to create gzip reader: ", err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create gzip reader"})
+			return
+		}
+		defer gzipReader.Close()
+		respReader = gzipReader
+	case "br":
+		respReader = brotli.NewReader(resp.Body)
+	default:
+		respReader = resp.Body
+	}
+
+	// read the resp body and print
+	respBody, err := io.ReadAll(respReader)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body"})
+		return
+	}
+	// log.Println("Response body: ", string(respBody))
+
+	// copy resp data to gin response, include headers
+	for key, values := range resp.Header {
+		for _, value := range values {
+			if key != "Content-Encoding" {
+				c.Header(key, value)
+			}
+		}
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		var chatCompletion ChatCompletion
+		err = json.Unmarshal(respBody, &chatCompletion)
+		if err != nil {
+			log.Println("Failed to unmarshal response body: ", err.Error())
+			log.Println("Response body: ", string(respBody))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to unmarshal response body"})
+			return
+		}
+		chatCompletion.Model = originModel
+		returnData, err := json.Marshal(chatCompletion)
+		if err != nil {
+			log.Println("Failed to marshal response data: ", err.Error())
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal response data"})
+		}
+		c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), returnData)
+	} else {
+		c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), respBody)
+	}
+}
+
+func ForwardRequest(c *gin.Context) {
+	requestURL := *API_BASE + c.Request.URL.String()
+	// log.Println("Request URL: " + requestURL)
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.AbortWithError(http.StatusInternalServerError, err)
+		return
+	}
+
+	req, err := http.NewRequest(c.Request.Method, requestURL, bytes.NewBuffer(body))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+	CopyHeaders(c.Request.Header, req.Header)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forward request"})
+		return
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body"})
+		return
+	}
+	for key, values := range resp.Header {
+		for _, value := range values {
+			c.Header(key, value)
+		}
+	}
+
+	c.Status(resp.StatusCode)
+	c.Writer.Write(respBody)
 }
 
 func main() {
@@ -145,63 +307,15 @@ func main() {
 		c.Data(http.StatusOK, "text/css", content)
 	})
 
-	r.POST("/v1/chat/completions", func(c *gin.Context) {
-		var openAIreq OpenAIRequest
+	g := r.Group("/v1")
 
-		if err := c.ShouldBind(&openAIreq); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "code": http.StatusBadRequest})
-		}
-
-		// if model in model_table keys replace it
-		if _, ok := MODEL_TABLE[openAIreq.Model]; ok {
-			originModedl := openAIreq.Model
-			replacedModel := MODEL_TABLE[originModedl]
-			log.Println("Replace model from ", originModedl, " to ", replacedModel)
-			openAIreq.Model = MODEL_TABLE[openAIreq.Model]
+	g.Any("/*any", func(c *gin.Context) {
+		if c.Request.Method == "POST" && c.Request.URL.Path == "/v1/chat/completions" {
+			ChatCompletions(c)
 		} else {
-			log.Println("Keep " + openAIreq.Model + " unchanged!")
+			// log.Println(c.Request.Method, c.Request.URL.Path)
+			ForwardRequest(c)
 		}
-
-		// 将修改后的数据转换为JSON
-		modifiedData, err := json.Marshal(openAIreq)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal modified data"})
-			return
-		}
-
-		// 创建新的HTTP客户端请求
-		req, err := http.NewRequest("POST", *API_BASE+"/v1/chat/completions", bytes.NewBuffer(modifiedData))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
-			return
-		}
-		copyHeaders(c.Request.Header, req.Header)
-
-		// 发送请求
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to forward request"})
-			return
-		}
-		defer resp.Body.Close()
-
-		// read the resp body and print
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read response body"})
-			return
-		}
-		// log.Println("Response body: ", string(respBody))
-
-		// copy resp data to gin response, include headers
-		for key, values := range resp.Header {
-			for _, value := range values {
-				c.Header(key, value)
-			}
-		}
-
-		// 将响应返回给原始请求者
-		c.Data(resp.StatusCode, "application/json", respBody)
 	})
 	r.NoRoute(func(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Not found", "code": http.StatusNotFound})

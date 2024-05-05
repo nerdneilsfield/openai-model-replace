@@ -3,6 +3,7 @@ module main
 go 1.22.2
 
 require (
+	github.com/andybalholm/brotli v1.1.0
 	github.com/gin-gonic/gin v1.9.1
 	github.com/gomarkdown/markdown v0.0.0-20240419095408-642f0ee99ae2
 )
